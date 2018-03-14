@@ -25,21 +25,21 @@ view = 1
   name = "All"
   tag = "*"
   
-[[filter]]
-  name = "Natural Language Processing"
-  tag = ".natural-language-processing"
+#[[filter]]
+#  name = "Natural Language Processing"
+#  tag = ".natural-language-processing"
 
-[[filter]]
-  name = "Autism"
-  tag = ".autism"
+#[[filter]]
+#  name = "Autism"
+#  tag = ".autism"
   
-[[filter]]
-  name = "Eye-tracking"
-  tag = ".eye-tracking"
+#[[filter]]
+#  name = "Eye-tracking"
+#  tag = ".eye-tracking"
   
-[[filter]]
-  name = "Outcomes"
-  tag = ".outcomes"
+#[[filter]]
+#  name = "Outcomes"
+#  tag = ".outcomes"
 
 +++
 
