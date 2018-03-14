@@ -1,4 +1,4 @@
-baseurl = "https://brendanmolin2.netlify.com/"
+baseurl = "https://brendanmolin.netlify.com/"
 title = "Brendan Richard Molin"
 copyright = "&copy; 2018 Brendan Richard Molin"
 theme = "hugo-academic"
