@@ -33,7 +33,7 @@ The data set we will be discussing today is a targeted extract of tweets from Un
 
 The data is curated by myself in uneven intervals up to 2018-03-18, at which point I began scraping daily on a one-day lag (while possible to stream tweets in real-time, twitter terms of service requires developers to respect deleted tweets; I attempt to do this by giving users enough time to delete tweets, which anecdotally seems to happen within hours).  If I lengthen the lag, I will update the documentation.
 
-The data can be obtained by following the Google Drive link in [https://github.com/brendanmolin/get-politician-tweets](the Github repo).  I highly recommend you read the documentation before downloading and using the data; I guarantee you will misuse the data and make a mistake in your analysis if you do not carefully read the documentation.
+The data can be obtained by following the Google Drive link in <https://github.com/brendanmolin/get-politician-tweets>.  I highly recommend you read the documentation before downloading and using the data; I guarantee you will misuse the data and make a mistake in your analysis if you do not carefully read the documentation.
 
 ```{r set_environment}
 library(data.table)
