@@ -1,0 +1,199 @@
+---
+title: 'Dataset Introduction: US Politician Tweets'
+author: Brendan Molin
+date: '2018-03-29'
+slug: dataset-introduction-us-politician-tweets
+categories:
+  - Data Science
+tags:
+  - R
+  - Natural Language Processing
+  - Exploratory
+  - twitter
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+The data set we will be discussing today is a targeted extract of tweets from United States politicians since 2017.  The data contains:
+
+1.  usernames
+2.  date/time
+3.  retweets
+4.  favorites
+5.  text
+6.  geography
+7.  mentions
+8.  hashtags
+9.  id
+10.  permalink
+
+The data is curated by myself in uneven intervals up to 2018-03-18, at which point I began scraping daily on a one-day lag (while possible to stream tweets in real-time, twitter terms of service requires developers to respect deleted tweets; I attempt to do this by giving users enough time to delete tweets, which anecdotally seems to happen within hours).  If I lengthen the lag, I will update the documentation.
+
+The data can be obtained by following the Google Drive link in [https://github.com/brendanmolin/get-politician-tweets](the Github repo).  I highly recommend you read the documentation before downloading and using the data; I guarantee you will misuse the data and make a mistake in your analysis if you do not carefully read the documentation.
+
+```{r set_environment}
+library(data.table)
+library(tidyverse)
+library(tidytext)
+library(lubridate)
+library(sentimentr)
+library(wordcloud)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(RColorBrewer)
+```
+
+```{r import_twitter_history}
+twitter_history <- fread("data/tweet_history.txt", stringsAsFactors = FALSE)
+```
+
+### Data Cleaning
+
+Let's take a quick look at the data to see what we've collected and start cleaning data.  The date field is imported as a character, though it contains the date, hour, and minute of the tweet.  Additionally, empty mentions and hashtags are not treated as missing but as empty strings.
+
+```{r invest_glimpse}
+glimpse(twitter_history)
+```
+
+We can clean these columns up easily by converting the date column to a POSIT class and change all the empty strings to NAs.  In the following analysis, I'm more concerned with Dates than times, so I'm going to add on an extra transformation to 'date' to turn it into the date class, dropping the time.  This will allow me to summarise by day.
+
+```{r invest_process_date_mentions_hashtags}
+twitter_history <- twitter_history %>%
+  mutate(date = as.POSIXct(date),
+         mentions = ifelse(mentions == "", NA, mentions),
+         hashtags = ifelse(hashtags == "", NA, hashtags),
+         date = as.Date(date))
+```
+
+Let's check for any missing data in columns we expect not to see any, and see how filled geo, mentions, and hashtags are.  Nothing appears out of order for our key variables.  Geo is completely empty, and mentions/hashtags are filled under half of the time.
+
+```{r invest_missing}
+colSums(is.na(twitter_history))
+```
+
+### Tweets Volume and Sentiment over Time
+
+Total tweet volume peaked during the President's joint address to Congress on February 28th, 2017.  The next peak was May 4th, 2017, when the Republican-lead House of Representatives passed an Affordable Care Act repeal bill and celebrated on the Rose Garden.  In fact, most of the weekly peaks were dominated by healthcare terms (health, healthcare, trumpcare).  We create this chart in plotly, with the top word of the day viewable on hover.
+
+```{r plot_tweet_volume_over_time}
+create_tidy_text <- function(twitter_history) {
+  data(stop_words)
+  custom_stop <- data.frame(word = c("http",
+                                     "https",
+                                     "httpwww",
+                                     "httpswww",
+                                     "pic.twitter.com"),
+                            lexicon = "custom_twitter",
+                            stringsAsFactors = FALSE)
+  stop_words <- rbind(stop_words, custom_stop)
+  
+  twitter_text <- twitter_history %>%
+    mutate(text = gsub("[^A-Za-z0-9 ]","",text)) %>%
+    unnest_tokens(word, text) %>%
+    anti_join(stop_words)
+  
+  return(twitter_text)
+}
+
+top_ngram_of_day <- function(tidytext) {
+  toptext <- tidytext %>%
+    group_by(date) %>%
+    count(word, sort = TRUE) %>%
+    arrange(date, -n) %>%
+    group_by(date) %>%
+    mutate(rank=row_number()) %>%
+    filter(rank == 1)
+  
+  return(toptext)
+}
+
+plot_tweet_volume_over_time <- function(twitter_history) {
+  toptext_1 <- create_tidy_text(twitter_history)
+  toptext_1 <- top_ngram_of_day(toptext_1)
+  
+  twitter_history <- twitter_history %>%
+    group_by(date) %>%
+    summarise(tweets = n()) %>%
+    left_join(toptext_1, by = c("date" = "date"))
+  
+  return(twitter_history)
+}
+
+tweet_time <- plot_tweet_volume_over_time(twitter_history)
+plot_ly(data = tweet_time,
+        x = ~date,
+        y = ~tweets,
+        text = ~paste0("Top Word of Day: ", word, " (n=", n, ")"),
+        type = 'scatter',
+        mode = 'lines')
+```
+
+There is a very clear seasonality within the week, with politicians tweets peaking Tuesday - Thursday and troughing on weekends.
+
+```{r plot_tweet_volume_over_weekdays}
+twitter_history %>%
+  mutate(dayofweek = weekdays(date),
+         dayofweek = factor(dayofweek, levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))) %>%
+  group_by(dayofweek) %>%
+  summarise(tweets = n()) %>%
+  ggplot(aes(x = dayofweek, y = tweets)) +
+  geom_bar(stat = 'identity', fill = '#1f77b4')
+```
+
+Looking at the top words used by politicians in 2017, not only has healthcare dominated the conversation, but the terms 'Trumpcare' is successfully dominating any other terms (AHCA, Obamacare, etc), a renovation in branding that put healthcare legislation 'problems' squarely on Republican shoulders.  Also of interest is the elevation of 'women' and 'veterans' as interest groups on par with a typically popular subject like 'jobs'.  2018 is interesting in that the conversaion is less focused on trump an more on Congress.  We also see a jump in the mentions of 'students', likely in reference to the Parkland students pushing for gun control reform.
+
+```{r total_wordcloud}
+get_top_words <- function(twitter_history) {
+  toptext_1 <- create_tidy_text(twitter_history)
+  
+  top_words <- toptext_1 %>%
+    count(word)
+  
+  return(top_words)
+}
+
+top_words_2017 <- get_top_words(twitter_history %>% dplyr::filter(year(date) == 2017))
+top_words_2018 <- get_top_words(twitter_history %>% dplyr::filter(year(date) == 2018))
+rpal2 <- brewer.pal(8,"Dark2")
+cat("2017")
+wordcloud(top_words_2017$word, top_words_2017$n, max.words = 200, random.order = FALSE, color = rpal2, scale = c(2, .25))
+cat("2018")
+wordcloud(top_words_2018$word, top_words_2018$n, max.words = 200, random.order = FALSE, color = rpal2, scale = c(2, .25))
+```
+
+These words give us an idea over what choices elected officials are making over driving and framing national conversations, but more illuminating would be getting a sense of the tone of the conversations.  Expanding on our time series analysis, we map out the proportion of different emotions of all the tweets on each day.  Notably, there are spikes in anger and fear on those days where we've seen tragic events unfold (Charlotesville, Las Vegas).  Joy spikes immensely on holidays (Happy Christmas! and such).
+
+```{r sentiment_time, fig.height=12, fig.width=12}
+get_sentiment_scores_over_time <- function(twitter_history) {
+  tidy_tweets <- create_tidy_text(twitter_history)
+  emotion_time <- tidy_tweets %>%
+    inner_join(get_sentiments("nrc")) %>%
+    group_by(date, sentiment) %>%
+    summarise(n = n()) %>%
+    mutate(perc=n/sum(n))
+  
+  return(emotion_time)
+}
+
+emotion_time <- get_sentiment_scores_over_time(twitter_history)
+emotion_time$sentiment <- factor(emotion_time$sentiment, levels = c("negative", "disgust", "anger", "sadness", "fear", "surprise", "anticipation", "trust", "joy", "positive"))
+ggplot(data = emotion_time, aes(x = date, y = perc, col = sentiment)) +
+  geom_line() +
+  facet_wrap(~sentiment, ncol = 3) +
+  scale_color_manual(values = colorRampPalette(brewer.pal(10, "Set1"))(10)) +
+  scale_x_date(date_breaks = "1 month", 
+               date_labels = "%b-%y",
+               expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0),
+                     labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, vjust = .5))
+```
+
+## Other Investigations
+
+*If you use this data for your own analysis, tweet me @bmo_molin or email me at brendan.molin@gmail.com; I'll add a link to it here and help broadcast it*
