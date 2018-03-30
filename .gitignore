@@ -4,3 +4,5 @@
 .Ruserdata
 public/
 .DS_Store
+content/post/data/*.txt
+content/post/data/*.csv
