@@ -1,0 +1,156 @@
+---
+title: World Cup Club Representation
+author: Brendan Molin
+date: '2018-06-14'
+slug: world-cup-club-representation
+categories: []
+tags: []
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+It's common knowledge amongst association football fans that the World Cup, while being the highest profile event in the world, isn't necessarily a display of the best football play in the world.
+
+For one, national teams have a more limited pool of talent to choose players from as compared to the top professional clubs in the world, as national teams can only pick players who identify as being with that nation, while clubs, with the right amount of money, compete for talent all over the world.  These clubs tend to all be in the European leagues, specifically in Great Britain, France, Germany, Spain, and Italy.
+
+On the other hand, the lack of familiarity between the players is an enormous obstacle of teams to overcome.  International teams don't often play, and players who end up representing their country in the World Cup often don't play in the 'friendly' matches, leaving a limited amount of time and game experience to develop chemistry with their teammates.  It's possible that sourcing players from the same club is an advantage to an international team, as you're importing the chemistry as well as the talent.
+
+We use data on the 2018 World Cup rosters and the 2018 club rosters to investigate these two factors.
+
+### Pre-processing
+
+```{r environment, message= FALSE}
+library(dplyr)
+library(visNetwork)
+library(ggplot2)
+library(countrycode)
+```
+
+We import data on the 2018 World Cup national teams from the dataset hosted on Kaggle. <https://www.kaggle.com/cclayford/2018-fifa-world-cup-squads>
+
+```{r import_squads}
+squads <- read.csv("data/2018 FIFA World Cup Squads.csv", stringsAsFactors = FALSE)
+colnames(squads)[1] <- "I..Team"
+```
+
+We also bring in some geographic data so we can later visualize which region of the world each country is.
+
+```{r import_country}
+countries <- countrycode::codelist %>% select(cldr.name.en, continent)
+```
+
+```{r create_nodes}
+# Get continent of each international team
+nodes_international <- squads %>%
+  select(I..Team) %>%
+  unique %>%
+  left_join(countries, by = c("I..Team" = "cldr.name.en")) %>%
+  mutate(continent = ifelse(I..Team == 'England', 'Europe', continent)) %>%
+  arrange(I..Team)
+
+# Set club continent to 'none' as we're not interested in the club attributes
+nodes_club <- data.frame(I..Team = unique(squads$Club), continent = 'None',
+                         stringsAsFactors = FALSE) %>%
+  arrange(I..Team)
+
+# Combine the club and country nodes
+nodes <- rbind(nodes_club, nodes_international) %>%
+  mutate(id = row_number()) %>%
+  rename(label = I..Team)
+
+# Set continent color scheme, size scheme
+continent_colors <- data.frame(continent = c("Asia", "Europe", "Africa", "Oceania", "Americas", "None"),
+                               color.background = c("gold", "purple", "darkgreen", "blue", "red", "grey"),
+                               size = c(3, 3, 3, 3, 3, 1),
+                               v_order = 1:6,
+                               stringsAsFactors = FALSE)
+
+# Combine color scheme to node and order by color so white is first (and thus plotted first, allowing countries to dominate plots when overlapping)
+nodes <- nodes %>%
+  left_join(continent_colors) %>%
+  arrange(desc(v_order)) %>%
+  select(id, label, color.background, size)
+```
+
+To create our relational map, we aggregate our data up to show counts of players grouped by their national and club teams.
+
+```{r squad_club_agg}
+# Replace club and international team names with the node IDs via two joins on differing keys; group by the two and count number of players
+links <- squads %>%
+  left_join(nodes, by = c("Club" = "label")) %>%
+  left_join(nodes, by = c("I..Team" = "label")) %>%
+  mutate(from = id.x, to = id.y) %>%
+  group_by(from, to) %>%
+  summarise(weight = n())
+```
+
+### Visualization
+
+We now have a full dataset of relational information - which clubs 'sent' players to the national teams.  To get an idea of how this tangle of relationships looks, we plot out these relationships in a network chart.  We use the visNetwork library to plot the data, as the interactive features allow us to more easily navigate networks with many nodes.
+
+```{r plot_scheme}
+vis.nodes <- nodes
+vis.links <- links
+
+# Node text
+vis.nodes$title  <- vis.nodes$label # Text on click
+vis.nodes$font.size = ifelse(vis.nodes$color.background == 'grey', 18, 36)
+
+# Node appearance
+vis.nodes$borderWidth <- 1
+vis.nodes$color.border <- "black"
+vis.nodes$size <- vis.nodes$size * 9
+
+# Edge appearance
+vis.links$width <- 1+links$weight/8 # line width
+vis.links$color <- "gray"    # line color
+vis.links$smooth <- FALSE    # should the edges be curved?
+```
+
+```{r visnetwork, fig.height=12, fig.width=12}
+visNetwork(vis.nodes, vis.links) %>%
+  visIgraphLayout() %>%
+  visOptions(highlightNearest = TRUE, 
+             nodesIdSelection = TRUE)
+```
+
+We can learn a lot from this chart.  For one, most European and Central/South American nations tend to draw from the same clubs and are centered in this network.  Out on the fringes, we have South Korea, Iceland, Peru, Panama, and Iran - their players are mostly coming from domestic leagues, with a few players being poached by other connected-yet-fringe clubs.
+
+If we accept our hypothesis that a select set of clubs find top talent in all parts of the world, those clubs at the center of this visualization should represent the top clubs.  The farther out countries are, the less connected they are to the global talent pool and are likely draw less talented players.  Hence, the countries near the center will be the top countries as they're drawing the most from those elite clubs.  This certainly plays out with our general knowledge of the World Cup, where a few European teams, Brazil, and Argentina have historically had major success.
+
+A potential flaw in this analysis comes from Euro-centric bias; given the multitude of European countries and leagues clustered in a relatively tight geographical space, and a World Cup system that allows more European teams to qualify than other regions, we're going to see European clubs with more depicted connectivity than, say, Asian clubs of equal quality and reach.  This would explain why a country like Sweden is so centered, despite being a below-average contender based on CBS power rankings. <https://www.cbssports.com/soccer/world-cup/news/2018-world-cup-power-rankings-brazil-remains-no-1-france-slips-after-draw-vs-usa/>
+
+To see which teams are working with the most imported team chemistry, we look at the number of club teammates groups that play for each international team.
+
+```{r ic_teammates}
+links %>%
+  left_join(nodes, by = c("from" = "id")) %>%
+  left_join(nodes, by = c("to" = "id")) %>%
+  mutate(weight = ifelse(weight == 1, 0, weight)) %>%
+  arrange(desc(weight)) %>%
+  group_by(label.y) %>%
+  mutate(total_teammates = sum(weight),
+         club_n = as.character(row_number())) %>%
+  ggplot(aes(x = reorder(label.y, total_teammates), y = weight, fill = club_n)) +
+  geom_bar(stat = 'identity', position = 'stack') +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(from = 0, to = 24, by = 4)) +
+  theme(legend.position = 'none') +
+  labs(subtitle = 'Number of players sharing international and club squads', y = 'Players', x = 'International Squad')
+```
+
+Germany and Spain stand out as not only having many players who play with at least one other teammates at the club level, but those teammates all come from two or three clubs.  Contrast that with France, which has a lot of players who share a club with a teammate, but those groups of teammates are never larger than 3 people.
+
+Potential flaws in this analysis comes from:
+
+1.  Club rosters are limited to 2018; these players may have just joined their new team and have limited experience with the teammates, or have a lot of teammates in past recent teams
+
+2.  We do not adjust for the amount of time teammates have spent together
+
+3.  Amount of international experience with teammates is likely more important than experience at the club level
+
+### Summary
+
+Based on these two factors, I would determine Germany and Spain to be the favorites in the World Cup, given their elite club sourcing and imported team chemistry.  Egypt and Mexico are my dark horses to make some noise, potentially upsetting the old guard with a couple of elite individual performances and solid team play.
