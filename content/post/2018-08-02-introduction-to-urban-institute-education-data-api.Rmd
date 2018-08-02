@@ -1,0 +1,168 @@
+---
+title: Introduction to Urban Institute Education Data API
+author: Brendan Molin
+date: '2018-08-02'
+slug: introduction-to-urban-institute-education-data-api
+categories: []
+tags: []
+---
+
+The Urban Institute released a public API that pulls and pre-processes data from various sources of education institution data, including but not limited to the Department of Education.  We used their R package to explore the relationship between applicant and enrollment volume.
+
+API Documentation: <https://ed-data-portal.urban.org/documentation/>
+
+To install the R, you must have the devtools library installed.
+
+
+```{r install_api}
+if(!('educationdata' %in% installed.packages()[,"Package"])) devtools::install_github('UrbanInstitute/education-data-package-r')
+```
+
+### Analysis of Applicants, Enrollments in Universities
+
+Among the data accessible through the API, university admission data stands out to me as a special dataset at this moment in time.  With recent reporting of racial discrimination in university application acceptance (see: <https://www.washingtonpost.com/local/education/internal-harvard-study-suggested-asian-americans-would-benefit-from-academics-only-admissions/2018/06/15/7a07202e-7021-11e8-bf86-a2351b5ece99_story.html?utm_term=.6f10c8bfdbb8>), new education-focused researchers might find this data useful as a starting point in evaluating a university's propensity for admitting students based on their gender or race.
+
+I do not explore this topic; to do so would require much more granular data than this.  I am, however, very interested in the relationship between the volume of applicants and enrollments at universities.  I understand that universities are starting to drive application volume, and graduating high schoolers are obliging with more applications sent out per person than ever before <https://www.usnews.com/education/blogs/college-admissions-playbook/2015/09/09/what-rising-college-application-volume-means-for-the-class-of-2020>.  I look into this trend to find out what universities are the 'most competitive' in terms of applicants/enrollment, and where competitiveness is rising or falling.
+
+```{r env}
+library(educationdata)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(plotly)
+library(knitr)
+library(kableExtra)
+```
+
+We call the API through the R package.  We're looking for admissions-enrollment data, as well as the university directory to retrieve complimentary data.
+
+```{r import}
+admissions <- suppressMessages(educationdata::get_education_data(level = "college-university",
+                                                                 source = 'ipeds',
+                                                                 topic = 'admissions-enrollment',
+                                                                 filters = list(year = 2001:2015),
+                                                                 add_labels = TRUE))
+
+dir <- suppressMessages(educationdata::get_education_data(level = "college-university",
+                                                          source = 'ipeds',
+                                                          topic = 'directory',
+                                                          filters = list(year = 2001:2015),
+                                                          add_labels = TRUE))
+
+print("Import Complete")
+```
+
+The package does not allow us to specify in the filters that we're not interested in sex or race (also - 'sex' is a bit outdated and should be considered for revision by the source, the National Center for Education Statistics Integrated Postsecondary Education Data System).
+
+```{r preprocess}
+admissions <- admissions[admissions$sex == 'Total' & admissions$ftpt == 'Total',]
+admissions <- admissions %>% select(-sex, -ftpt)
+```
+
+We plot out the number of applicants vs the number of enrollees at each school, animated over time.  I like to use plot_ly for these kinds of charts, as their animation allows you to pause on each frame to take a longer look at the chart; in addition, with so many data points, it's nice to be able to hover and see the names of the schools.  We see a general and sensible correlation between the number of applicants and enrollments; generally, there tends to be a higher ratio in private schools than public schools.
+
+```{r explore_enrolled, fig.width=8, fig.height=8}
+admissions %>%
+    filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+    inner_join(dir) %>%
+  plot_ly(
+    x = ~number_enrolled, 
+    y = ~number_applied, 
+    color = ~inst_control, 
+    frame = ~year, 
+    text = ~inst_name, 
+    hoverinfo = "text",
+    type = 'scatter',
+    mode = 'markers',
+    opacity = 0.3
+  ) %>% 
+  animation_opts(
+    1000, easing = "elastic", redraw = FALSE
+  )
+```
+
+We look at the distribution of the ratios to check what the average is and how many outliers there are.
+
+```{r ratio_distr}
+admissions %>%
+  filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+  inner_join(dir) %>%
+  mutate(applied_enrolled_ratio = number_applied/number_enrolled) %>%
+  ggplot(aes(x = factor(year), y = applied_enrolled_ratio)) +
+  geom_boxplot() +
+  geom_point(alpha = 0.4) +
+  theme(legend.position = 'bottom')
+```
+
+Looking at the worst ten outliers, we see these are typically smaller and/or specialized schools (i.e. nursing schools). 
+
+```{r ratio_outlier}
+admissions %>%
+  filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+  inner_join(dir %>% select(unitid, year, inst_name, inst_control)) %>%
+  mutate(applied_enrolled_ratio = number_applied/number_enrolled) %>%
+  arrange(desc(applied_enrolled_ratio)) %>%
+  head(n = 10) %>%
+  kable('html') %>%
+  kable_styling()
+```
+
+I wondered if larger schools have an outsized ratio of applicants compared to their enrollments, as the popularity of the brand name may come to outstrip its actual size.  This is not true, however; smaller schools - and particularly private schools - have higher ratios of applicants to enrollments.  This may be due to more broad brand recognition of private universities, who compete for students all over the country whereas public schools tend to attract more in-state applicants due to in-state tuition.
+
+```{r explore_enrolled_2, fig.width=8, fig.height=8}
+admissions %>%
+    filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+    inner_join(dir) %>%
+    mutate(applied_enrolled_ratio = number_applied/number_enrolled) %>%
+  plot_ly(
+    x = ~number_enrolled, 
+    y = ~applied_enrolled_ratio, 
+    color = ~inst_control, 
+    frame = ~year, 
+    text = ~inst_name, 
+    hoverinfo = "text",
+    type = 'scatter',
+    mode = 'markers',
+    opacity = 0.6
+  ) %>% 
+  animation_opts(
+    1000, easing = "elastic", redraw = FALSE
+  )
+```
+
+As severely as tuition costs have been rising, it's important to understand whether we see a supply-side bump in accepting students.  Theoretically, given the high marginal revenue of each student, we should see high expansion of enrollments.  The increase, however, has been modest at private institutions, but higher at public institutions.  Perhaps public universities are able to capture more students who are seeking lower tuitions, while private universities are content to flex their brand for the highest paying students.
+
+```{r total_admissions}
+admissions %>%
+  filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+  inner_join(dir) %>%
+  group_by(inst_control, year) %>%
+  summarize(total_enrollees = sum(number_enrolled)) %>%
+  mutate(first_total_enrollees = first(total_enrollees, order_by = year),
+         total_enrollees_index = 100*total_enrollees/first_total_enrollees) %>%
+  ggplot(aes(x = year, y = total_enrollees_index, col = inst_control)) +
+  geom_line() +
+  theme(legend.position = 'bottom') +
+  labs(y = 'Enrollment (Indexed to 2001)')
+```
+
+As long as private univerties continue to get more competitive, there's no chance of more affordable tuition rates coming from these schools.
+
+```{r total_applicantsperadmissions}
+admissions %>%
+  filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+  inner_join(dir) %>%
+  group_by(inst_control, year) %>%
+  summarize(total_enrollments = sum(number_enrolled),
+            total_applicants = sum(number_applied)) %>%
+  mutate(total_applicants_per_enrollments = total_applicants/total_enrollments,
+    first_applicants_per_enrollments = first(total_applicants_per_enrollments, order_by = year),
+         total_applicants_per_enrollments_index = 100*total_applicants_per_enrollments/first_applicants_per_enrollments) %>%
+  ggplot(aes(x = year, y = total_applicants_per_enrollments_index, col = inst_control)) +
+  geom_line() +
+  theme(legend.position = 'bottom') +
+  labs(y = 'Applicants per Enrollment (Indexed to 2001)')
+```
+
+If I'm a local or state policy advisor, I'm recommending a drastic expansion in public universities - and even lower the barrier for out-of-state applicants - to bring in talented people who can't afford to break into the private school competitive and financial barriers, thus attracting private sector expansion in high-growth industries <https://www.bloomberg.com/view/articles/2018-03-06/how-universities-make-cities-great>.
