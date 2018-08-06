@@ -25,14 +25,16 @@ Among the data accessible through the API, university admission data stands out 
 I do not explore this topic; to do so would require much more granular data than this.  I am, however, very interested in the relationship between the volume of applicants and enrollments at universities.  I understand that universities are starting to drive application volume, and graduating high schoolers are obliging with more applications sent out per person than ever before <https://www.usnews.com/education/blogs/college-admissions-playbook/2015/09/09/what-rising-college-application-volume-means-for-the-class-of-2020>.  I look into this trend to find out what universities are the 'most competitive' in terms of applicants/enrollment, and where competitiveness is rising or falling.
 
 ```{r env}
-library(educationdata)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(scales)
-library(plotly)
-library(knitr)
-library(kableExtra)
+suppressMessages({
+  library(educationdata)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(scales)
+  library(plotly)
+  library(knitr)
+  library(kableExtra)
+})
 ```
 
 We call the API through the R package.  We're looking for admissions-enrollment data, as well as the university directory to retrieve complimentary data.
@@ -64,8 +66,8 @@ We plot out the number of applicants vs the number of enrollees at each school, 
 
 ```{r explore_enrolled, fig.width=8, fig.height=8}
 admissions %>%
-    filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
-    inner_join(dir) %>%
+  filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+  inner_join(dir) %>%
   plot_ly(
     x = ~number_enrolled, 
     y = ~number_applied, 
@@ -75,10 +77,7 @@ admissions %>%
     hoverinfo = "text",
     type = 'scatter',
     mode = 'markers',
-    opacity = 0.3
-  ) %>% 
-  animation_opts(
-    1000, easing = "elastic", redraw = FALSE
+    opacity = 0.8
   )
 ```
 
@@ -91,11 +90,10 @@ admissions %>%
   mutate(applied_enrolled_ratio = number_applied/number_enrolled) %>%
   ggplot(aes(x = factor(year), y = applied_enrolled_ratio)) +
   geom_boxplot() +
-  geom_point(alpha = 0.4) +
   theme(legend.position = 'bottom')
 ```
 
-Looking at the worst ten outliers, we see these are typically smaller and/or specialized schools (i.e. nursing schools). 
+Looking at the worst ten outliers, we see these are typically smaller and/or technical schools. 
 
 ```{r ratio_outlier}
 admissions %>%
@@ -112,9 +110,9 @@ I wondered if larger schools have an outsized ratio of applicants compared to th
 
 ```{r explore_enrolled_2, fig.width=8, fig.height=8}
 admissions %>%
-    filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
-    inner_join(dir) %>%
-    mutate(applied_enrolled_ratio = number_applied/number_enrolled) %>%
+  filter(!is.na(number_applied), number_enrolled > 0, number_applied > 0) %>%
+  inner_join(dir) %>%
+  mutate(applied_enrolled_ratio = number_applied/number_enrolled) %>%
   plot_ly(
     x = ~number_enrolled, 
     y = ~applied_enrolled_ratio, 
@@ -124,10 +122,7 @@ admissions %>%
     hoverinfo = "text",
     type = 'scatter',
     mode = 'markers',
-    opacity = 0.6
-  ) %>% 
-  animation_opts(
-    1000, easing = "elastic", redraw = FALSE
+    opacity = 0.8
   )
 ```
 
@@ -157,7 +152,7 @@ admissions %>%
   summarize(total_enrollments = sum(number_enrolled),
             total_applicants = sum(number_applied)) %>%
   mutate(total_applicants_per_enrollments = total_applicants/total_enrollments,
-    first_applicants_per_enrollments = first(total_applicants_per_enrollments, order_by = year),
+         first_applicants_per_enrollments = first(total_applicants_per_enrollments, order_by = year),
          total_applicants_per_enrollments_index = 100*total_applicants_per_enrollments/first_applicants_per_enrollments) %>%
   ggplot(aes(x = year, y = total_applicants_per_enrollments_index, col = inst_control)) +
   geom_line() +
