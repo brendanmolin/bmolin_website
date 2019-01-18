@@ -34,6 +34,6 @@ weight = 1
 
 # About me
 
-I am the sole proprietor of Commonwealth Analytics where I do part-time data science contracting, and a full-time data analyst at Frontpoint Securities, residing in our nation's capital of Washington, D.C.
+I am a data scientist residing in Arlington, VA.
 
 Outside of my career, I am an avid cook, with my Old and New Testaments being Cooks Illustrated and Milk Street, respectively.  To justify the copious amounts of eating that naturally follows cooking, I am a casual competitor in half marathons and Ragnar races.
